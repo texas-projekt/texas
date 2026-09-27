@@ -9,7 +9,10 @@ use floem::{
     style::{AlignItems, CursorStyle, Display},
     views::{Decorators, label, stack, svg},
 };
-use texas_core::mode::{Mode, VisualMode};
+use texas_core::{
+    buffer::rope_text::RopeText,
+    mode::{Mode, VisualMode},
+};
 
 use crate::{
     app::clickable_icon,
@@ -240,84 +243,126 @@ pub fn status(
         stack({
             let palette_clone = palette.clone();
             let cursor_i18n = i18n.clone();
-            let cursor_info = status_text(config, editor, move || {
-                if let Some(editor) = editor.get() {
-                    let mut status = String::new();
-                    let cursor = editor.cursor().get();
-                    if let Some((line, column, character)) = editor
-                        .doc_signal()
-                        .get()
-                        .buffer
-                        .with(|buffer| cursor.get_line_col_char(buffer))
-                    {
-                        status = cursor_i18n.text_with_args(
-                            "status.cursor-position",
-                            "Ln {line}, Col {column}, Char {char}",
-                            &[
-                                ("line", &(line + 1).to_string()),
-                                ("column", &(column + 1).to_string()),
-                                ("char", &character.to_string()),
-                            ],
-                        );
+            let line_count_i18n = i18n.clone();
+            let line_count_info = status_text(
+                config,
+                editor,
+                move || {
+                    if let Some(editor) = editor.get() {
+                        let line_count = editor
+                            .doc_signal()
+                            .get()
+                            .buffer
+                            .with(|buffer| buffer.last_line() + 1);
+                        line_count_i18n.text_with_args(
+                            "status.total-lines",
+                            "{count} lines",
+                            &[("count", &line_count.to_string())],
+                        )
+                    } else {
+                        String::new()
                     }
-                    if let Some(selection) = cursor.get_selection() {
-                        let selection_range = selection.0.abs_diff(selection.1);
-
-                        if selection.0 != selection.1 {
+                },
+                false,
+            );
+            let cursor_info = status_text(
+                config,
+                editor,
+                move || {
+                    if let Some(editor) = editor.get() {
+                        let mut status = String::new();
+                        let cursor = editor.cursor().get();
+                        if let Some((line, column, character)) = editor
+                            .doc_signal()
+                            .get()
+                            .buffer
+                            .with(|buffer| cursor.get_line_col_char(buffer))
+                        {
                             status = cursor_i18n.text_with_args(
-                                "status.selected",
-                                "{base} ({count} selected)",
+                                "status.cursor-position",
+                                "Ln {line}, Col {column}, Char {char}",
                                 &[
-                                    ("base", &status),
-                                    ("count", &selection_range.to_string()),
+                                    ("line", &(line + 1).to_string()),
+                                    ("column", &(column + 1).to_string()),
+                                    ("char", &character.to_string()),
                                 ],
                             );
                         }
+                        if let Some(selection) = cursor.get_selection() {
+                            let selection_range = selection.0.abs_diff(selection.1);
+
+                            if selection.0 != selection.1 {
+                                status = cursor_i18n.text_with_args(
+                                    "status.selected",
+                                    "{base} ({count} selected)",
+                                    &[
+                                        ("base", &status),
+                                        ("count", &selection_range.to_string()),
+                                    ],
+                                );
+                            }
+                        }
+                        let selection_count = cursor.get_selection_count();
+                        if selection_count > 1 {
+                            status = cursor_i18n.text_with_args(
+                                "status.selections",
+                                "{base} {count} selections",
+                                &[
+                                    ("base", &status),
+                                    ("count", &selection_count.to_string()),
+                                ],
+                            );
+                        }
+                        return status;
                     }
-                    let selection_count = cursor.get_selection_count();
-                    if selection_count > 1 {
-                        status = cursor_i18n.text_with_args(
-                            "status.selections",
-                            "{base} {count} selections",
-                            &[
-                                ("base", &status),
-                                ("count", &selection_count.to_string()),
-                            ],
-                        );
-                    }
-                    return status;
-                }
-                String::new()
-            })
+                    String::new()
+                },
+                true,
+            )
             .on_click_stop(move |_| {
                 palette_clone.run(PaletteKind::Line);
             });
             let palette_clone = palette.clone();
-            let line_ending_info = status_text(config, editor, move || {
-                if let Some(editor) = editor.get() {
-                    let doc = editor.doc_signal().get();
-                    doc.buffer.with(|b| b.line_ending()).as_str()
-                } else {
-                    ""
-                }
-            })
+            let line_ending_info = status_text(
+                config,
+                editor,
+                move || {
+                    if let Some(editor) = editor.get() {
+                        let doc = editor.doc_signal().get();
+                        doc.buffer.with(|b| b.line_ending()).as_str()
+                    } else {
+                        ""
+                    }
+                },
+                true,
+            )
             .on_click_stop(move |_| {
                 palette_clone.run(PaletteKind::LineEnding);
             });
             let palette_clone = palette.clone();
             let language_i18n = i18n.clone();
-            let language_info = status_text(config, editor, move || {
-                if let Some(editor) = editor.get() {
-                    let doc = editor.doc_signal().get();
-                    doc.syntax().with(|s| s.language.name()).to_string()
-                } else {
-                    language_i18n.text("status.unknown-language")
-                }
-            })
+            let language_info = status_text(
+                config,
+                editor,
+                move || {
+                    if let Some(editor) = editor.get() {
+                        let doc = editor.doc_signal().get();
+                        doc.syntax().with(|s| s.language.name()).to_string()
+                    } else {
+                        language_i18n.text("status.unknown-language")
+                    }
+                },
+                true,
+            )
             .on_click_stop(move |_| {
                 palette_clone.run(PaletteKind::Language);
             });
-            (cursor_info, line_ending_info, language_info)
+            (
+                line_count_info,
+                cursor_info,
+                line_ending_info,
+                language_info,
+            )
         })
         .style(|s| {
             s.height_pct(100.0)
@@ -349,6 +394,7 @@ fn status_text<S: std::fmt::Display + 'static>(
     config: ReadSignal<Arc<TexasConfig>>,
     editor: Memo<Option<EditorData>>,
     text: impl Fn() -> S + 'static,
+    interactive: bool,
 ) -> impl View {
     label(text).style(move |s| {
         let config = config.get();
@@ -372,9 +418,12 @@ fn status_text<S: std::fmt::Display + 'static>(
             .padding_horiz(10.0)
             .items_center()
             .color(config.color(TexasColor::STATUS_FOREGROUND))
-            .hover(|s| {
-                s.cursor(CursorStyle::Pointer)
-                    .background(config.color(TexasColor::PANEL_HOVERED_BACKGROUND))
+            .apply_if(interactive, |s| {
+                s.hover(|s| {
+                    s.cursor(CursorStyle::Pointer).background(
+                        config.color(TexasColor::PANEL_HOVERED_BACKGROUND),
+                    )
+                })
             })
             .selectable(false)
     })

@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+    tags: ["v[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
     inputs:
       tag_name:
@@ -73,7 +73,12 @@ jobs:
 
       - name: Publish release
         run: |
+          release_flags=()
+          if [[ "$RELEASE_TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.+ ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "$RELEASE_TAG_NAME" \
             --title "$RELEASE_TAG_NAME" \
             --target "$GITHUB_SHA" \
+            "${release_flags[@]}" \
             Texas-windows-portable.zip

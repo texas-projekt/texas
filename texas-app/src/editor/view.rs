@@ -1351,18 +1351,22 @@ fn editor_gutter(
     };
 
     let gutter_padding_right = create_memo(move |_| icon_total_width() + 6.0);
+    let line_number_width = create_memo(move |_| {
+        let line_count =
+            doc.with(|doc| doc.buffer.with(|buffer| buffer.last_line() + 1));
+        let font_size = config.get().editor.font_size() as f32;
+        (line_count.to_string().len() as f32 * font_size * 0.6).max(font_size)
+    });
 
     stack((
-        stack((
-            empty().style(move |s| s.width(icon_total_width() * 2.0 - 8.0)),
-            label(move || {
-                let doc = doc.get();
-                doc.buffer.with(|b| b.last_line() + 1).to_string()
-            }),
-            empty().style(move |s| s.width(gutter_padding_right.get())),
-        ))
-        .debug_name("Centered Last Line Count")
-        .style(|s| s.height_pct(100.0)),
+        empty().style(move |s| {
+            s.width(
+                icon_total_width() * 2.0 - 8.0
+                    + line_number_width.get()
+                    + 8.0
+                    + gutter_padding_right.get(),
+            )
+        }),
         clip(
             stack((editor_gutter_view(
                 e_data.get_untracked(),

@@ -13,7 +13,6 @@ use crate::{
     editor_tab::{EditorTabChild, EditorTabData},
     id::{DiffEditorId, EditorTabId},
     main_split::{Editors, MainSplitData},
-    wave::wave_box,
     window_tab::CommonData,
 };
 use floem::{
@@ -449,11 +448,6 @@ pub fn diff_show_more_section_view(
     let view_fn = move |section: DiffShowMoreSection| {
         let i18n = view_i18n.clone();
         stack((
-            wave_box().style(move |s| {
-                s.absolute()
-                    .size_pct(100.0, 100.0)
-                    .color(config.get().color(TexasColor::PANEL_BACKGROUND))
-            }),
             label({
                 let hidden_i18n = i18n.clone();
                 move || {
@@ -463,8 +457,13 @@ pub fn diff_show_more_section_view(
                         hidden_i18n.text("common.hidden-lines")
                     )
                 }
+            })
+            .style(move |s| {
+                let config = config.get();
+                s.padding_horiz(8.0)
+                    .color(config.color(TexasColor::PANEL_FOREGROUND_DIM))
+                    .selectable(false)
             }),
-            label(|| "|".to_string()).style(|s| s.margin_left(10.0)),
             stack((
                 svg(move || config.get().ui_svg(TexasIcons::FOLD)).style(move |s| {
                     let config = config.get();
@@ -498,13 +497,18 @@ pub fn diff_show_more_section_view(
                     }
                 });
             })
-            .style(|s| {
+            .style(move |s| {
+                let hover_background =
+                    config.get().color(TexasColor::PANEL_HOVERED_BACKGROUND);
                 s.margin_left(10.0)
+                    .padding_horiz(6.0)
                     .height_pct(100.0)
                     .items_center()
-                    .hover(|s| s.cursor(CursorStyle::Pointer))
+                    .border_radius(6.0)
+                    .hover(move |s| {
+                        s.cursor(CursorStyle::Pointer).background(hover_background)
+                    })
             }),
-            label(|| "|".to_string()).style(|s| s.margin_left(10.0)),
             stack((
                 svg(move || config.get().ui_svg(TexasIcons::FOLD_UP)).style(
                     move |s| {
@@ -541,12 +545,17 @@ pub fn diff_show_more_section_view(
                 });
             })
             .style(move |s| {
+                let hover_background =
+                    config.get().color(TexasColor::PANEL_HOVERED_BACKGROUND);
                 s.margin_left(10.0)
+                    .padding_horiz(6.0)
                     .height_pct(100.0)
                     .items_center()
-                    .hover(|s| s.cursor(CursorStyle::Pointer))
+                    .border_radius(6.0)
+                    .hover(move |s| {
+                        s.cursor(CursorStyle::Pointer).background(hover_background)
+                    })
             }),
-            label(|| "|".to_string()).style(|s| s.margin_left(10.0)),
             stack((
                 svg(move || config.get().ui_svg(TexasIcons::FOLD_DOWN)).style(
                     move |s| {
@@ -583,10 +592,16 @@ pub fn diff_show_more_section_view(
                 });
             })
             .style(move |s| {
+                let hover_background =
+                    config.get().color(TexasColor::PANEL_HOVERED_BACKGROUND);
                 s.margin_left(10.0)
+                    .padding_horiz(6.0)
                     .height_pct(100.0)
                     .items_center()
-                    .hover(|s| s.cursor(CursorStyle::Pointer))
+                    .border_radius(6.0)
+                    .hover(move |s| {
+                        s.cursor(CursorStyle::Pointer).background(hover_background)
+                    })
             }),
         ))
         .on_event_cont(EventListener::PointerWheel, move |event| {
@@ -627,6 +642,10 @@ pub fn diff_show_more_section_view(
                 .height(line_height as f32)
                 .justify_center()
                 .items_center()
+                .background(config.color(TexasColor::EDITOR_BACKGROUND))
+                .border_top(1.0)
+                .border_bottom(1.0)
+                .border_color(config.color(TexasColor::TEXAS_BORDER))
                 .margin_top(y)
                 .pointer_events_auto()
                 .hover(|s| s.cursor(CursorStyle::Default))

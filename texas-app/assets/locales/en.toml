@@ -443,6 +443,7 @@
 "settings.value.wrap-style.none" = "None"
 "settings.value.wrap-style.wrap-width" = "Wrap Width"
 "status.cursor-position" = "Ln {line}, Col {column}, Char {char}"
+"status.total-lines" = "{count} lines"
 "status.selected" = "{base} ({count} selected)"
 "status.selections" = "{base} {count} selections"
 "status.unknown-language" = "unknown"

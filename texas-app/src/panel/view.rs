@@ -627,8 +627,6 @@ fn panel_picker(
                         .pointer_events_none()
                         .absolute()
                         .size_pct(100.0, 100.0)
-                        .apply_if(!is_bottom && is_first, |s| s.margin_top(2.0))
-                        .apply_if(!is_bottom && !is_first, |s| s.margin_top(-2.0))
                         .apply_if(is_bottom && is_first, |s| s.margin_left(-2.0))
                         .apply_if(is_bottom && !is_first, |s| s.margin_left(2.0))
                         .apply_if(is_active(), |s| {
@@ -652,6 +650,7 @@ fn panel_picker(
         },
     )
     .style(move |s| {
+        let header_height = config.get().ui.header_height() as f32;
         s.border_color(config.get().color(TexasColor::TEXAS_BORDER))
             .apply_if(
                 panels.with(|p| {
@@ -664,5 +663,6 @@ fn panel_picker(
             .apply_if(is_bottom && !is_first, |s| s.border_left(1.0))
             .apply_if(!is_bottom && is_first, |s| s.border_bottom(1.0))
             .apply_if(!is_bottom && !is_first, |s| s.border_top(1.0))
+            .apply_if(!is_bottom, |s| s.height(header_height).items_center())
     })
 }

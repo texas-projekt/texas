@@ -443,6 +443,7 @@
 "settings.value.wrap-style.none" = "不换行"
 "settings.value.wrap-style.wrap-width" = "指定宽度"
 "status.cursor-position" = "行 {line}，列 {column}，字符 {char}"
+"status.total-lines" = "{count} 行"
 "status.selected" = "{base}（已选 {count} 个字符）"
 "status.selections" = "{base}，{count} 个选区"
 "status.unknown-language" = "未知"

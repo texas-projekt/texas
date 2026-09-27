@@ -29,6 +29,8 @@ impl Locale {
         } else if tag == "zh"
             || tag == "zh-cn"
             || tag == "zh_cn"
+            || tag == "zh-hans"
+            || tag.starts_with("zh-hans-")
             || tag.starts_with("zh-cn.")
             || tag.starts_with("zh_cn.")
         {
@@ -39,6 +41,13 @@ impl Locale {
     }
 
     fn detect_system() -> Self {
+        #[cfg(windows)]
+        if let Some(locale) =
+            sys_locale::get_locales().find_map(|tag| Self::from_tag(&tag))
+        {
+            return locale;
+        }
+
         ["LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG"]
             .into_iter()
             .filter_map(|key| env::var(key).ok())
@@ -243,6 +252,7 @@ mod tests {
     fn locale_tags_are_normalized_conservatively() {
         assert_eq!(Locale::from_preference("en-US"), Locale::En);
         assert_eq!(Locale::from_preference("zh-CN"), Locale::ZhCn);
+        assert_eq!(Locale::from_tag("zh-Hans-CN"), Some(Locale::ZhCn));
         assert_ne!(Locale::from_tag("zh-TW"), Some(Locale::ZhCn));
         assert_eq!(Locale::from_preference("fr"), Locale::En);
     }

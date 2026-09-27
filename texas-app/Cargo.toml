@@ -34,6 +34,7 @@ strum              = { workspace = true }
 strum_macros       = { workspace = true }
 serde              = { workspace = true }
 serde_json         = { workspace = true }
+sys-locale         = { workspace = true }
 regex              = { workspace = true }
 tar                = { workspace = true }
 tempfile           = { workspace = true }
@@ -61,6 +62,7 @@ workspace = true
 features  = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    "Win32_System_LibraryLoader",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ]

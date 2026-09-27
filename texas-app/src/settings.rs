@@ -346,7 +346,7 @@ pub fn settings_view(editors: Editors, common: Rc<CommonData>) -> impl View {
         })
         .style(move |s| {
             s.height_pct(100.0)
-                .width(200.0)
+                .width(180.0)
                 .border_right(1.0)
                 .border_color(config.get().color(TexasColor::TEXAS_BORDER))
         }),

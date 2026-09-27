@@ -122,6 +122,58 @@ fn enable_rounded_window_corners(window_id: WindowId) {
     }
 }
 
+#[cfg(windows)]
+fn enable_system_dark_menus(window_id: WindowId) {
+    use std::sync::OnceLock;
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+
+    type SetPreferredAppMode = unsafe extern "system" fn(i32) -> i32;
+    type FlushMenuThemes = unsafe extern "system" fn();
+    type AllowDarkModeForWindow = unsafe extern "system" fn(
+        windows_sys::Win32::Foundation::HWND,
+        bool,
+    ) -> bool;
+
+    static UXTHEME: OnceLock<isize> = OnceLock::new();
+    static APP_MODE: OnceLock<()> = OnceLock::new();
+
+    // These optional uxtheme ordinals are Windows' compatibility path for native dark menus.
+    let module = *UXTHEME.get_or_init(|| unsafe {
+        LoadLibraryA(c"uxtheme.dll".as_ptr().cast()) as isize
+    });
+    if module == 0 {
+        return;
+    }
+
+    unsafe {
+        APP_MODE.get_or_init(|| {
+            if let Some(set_preferred_app_mode) =
+                GetProcAddress(module as _, 135usize as *const u8)
+            {
+                let set_preferred_app_mode: SetPreferredAppMode =
+                    std::mem::transmute(set_preferred_app_mode);
+                set_preferred_app_mode(1);
+            }
+
+            if let Some(flush_menu_themes) =
+                GetProcAddress(module as _, 136usize as *const u8)
+            {
+                let flush_menu_themes: FlushMenuThemes =
+                    std::mem::transmute(flush_menu_themes);
+                flush_menu_themes();
+            }
+        });
+
+        if let Some(allow_dark_mode_for_window) =
+            GetProcAddress(module as _, 133usize as *const u8)
+        {
+            let allow_dark_mode_for_window: AllowDarkModeForWindow =
+                std::mem::transmute(allow_dark_mode_for_window);
+            allow_dark_mode_for_window(window_id.into_raw() as _, true);
+        }
+    }
+}
+
 mod grammars;
 mod logging;
 
@@ -435,7 +487,10 @@ impl AppData {
         files: Vec<PathObject>,
     ) -> impl View + use<> {
         #[cfg(windows)]
-        enable_rounded_window_corners(window_id);
+        {
+            enable_rounded_window_corners(window_id);
+            enable_system_dark_menus(window_id);
+        }
 
         let app_view_id = create_rw_signal(floem::ViewId::new());
         let window_data = WindowData::new(
