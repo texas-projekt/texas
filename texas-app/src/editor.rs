@@ -2090,6 +2090,8 @@ pub(crate) fn compute_screen_lines(
                             info.insert(
                                 rvline,
                                 LineInfo {
+                                    // `y` anchors the complete wrapped source line, while
+                                    // `vline_y` identifies this individual wrapped segment.
                                     y: line_y(rvline_info, vline_y) as f64 - y0,
                                     vline_y: vline_y as f64 - y0,
                                     vline_info: rvline_info,
@@ -2158,21 +2160,15 @@ pub(crate) fn compute_screen_lines(
                                 if Some(skip.start) == line.checked_sub(start) {
                                     y_idx += 1;
 
-                                    // restart iterator after the skip
-                                    let start_rvline = lines.rvline_of_line(
-                                        &text_prov,
-                                        start + skip.end,
-                                    );
-
-                                    iter = lines
-                                        .iter_rvlines_init(
-                                            &text_prov,
-                                            cache_rev,
-                                            config_id,
-                                            start_rvline,
-                                            false,
-                                        )
-                                        .peekable();
+                                    // Consume the hidden visual lines from the existing
+                                    // monotonic iterator. Rebuilding it at `skip.end` can
+                                    // repeatedly reinitialize text layouts while a diff is
+                                    // being replaced, and makes progress difficult to prove.
+                                    while iter.peek().is_some_and(|next| {
+                                        next.rvline.line < start + skip.end
+                                    }) {
+                                        iter.next();
+                                    }
 
                                     continue;
                                 }

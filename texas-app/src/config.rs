@@ -1,7 +1,7 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use ::core::slice;
@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use serde::Deserialize;
 use strum::VariantNames;
 use texas_core::directory::Directory;
-use tracing::error;
+use tracing::{error, warn};
 
 use self::{
     color::TexasColor,
@@ -47,6 +47,14 @@ const DEFAULT_ICON_THEME: &str = include_str!("../../defaults/icon-theme.toml");
 static DEFAULT_CONFIG: Lazy<config::Config> = Lazy::new(TexasConfig::default_config);
 static DEFAULT_TEXAS_CONFIG: Lazy<TexasConfig> =
     Lazy::new(TexasConfig::default_texas_config);
+static UNKNOWN_COLOR_KEYS: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
+
+fn mark_unknown_color_key(name: &str) -> bool {
+    UNKNOWN_COLOR_KEYS
+        .lock()
+        .is_ok_and(|mut keys| keys.insert(name.to_string()))
+}
 
 static DEFAULT_DARK_THEME_CONFIG: Lazy<config::Config> = Lazy::new(|| {
     config::Config::builder()
@@ -318,8 +326,17 @@ impl TexasConfig {
         match self.color.ui.get(name) {
             Some(c) => *c,
             None => {
-                error!("Failed to find key: {name}");
-                css::HOT_PINK
+                if mark_unknown_color_key(name) {
+                    warn!(
+                        "Color key is missing from the active and default themes: {name}"
+                    );
+                }
+                DEFAULT_TEXAS_CONFIG
+                    .color
+                    .ui
+                    .get(name)
+                    .copied()
+                    .unwrap_or(css::HOT_PINK)
             }
         }
     }
@@ -836,5 +853,17 @@ impl TexasConfig {
         std::fs::write(path, main_table.to_string().as_bytes()).ok()?;
 
         Some(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mark_unknown_color_key;
+
+    #[test]
+    fn unknown_color_key_is_reported_once() {
+        let key = "test.unknown-color-key";
+        assert!(mark_unknown_color_key(key));
+        assert!(!mark_unknown_color_key(key));
     }
 }

@@ -277,7 +277,17 @@ pub fn editor_view(
         EventPropagation::Stop
     })
     .class(EditorViewClass)
-    .style(move |s| editor_style(config, doc, s))
+    .style(move |s| {
+        let s = editor_style(config, doc, s);
+        // Diff screen-line mapping is line based and does not yet support wrapped rows.
+        // Keeping wrapping off prevents long Cargo/dependency lines from overlapping the
+        // following source line and keeps both panes vertically aligned.
+        if view_kind.with(|kind| !kind.is_normal()) {
+            s.set(WrapProp, WrapMethod::None)
+        } else {
+            s
+        }
+    })
 }
 
 impl EditorView {

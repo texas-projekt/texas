@@ -75,9 +75,9 @@ texas-core  = { path = "./texas-core" }
 texas-rpc   = { path = "./texas-rpc" }
 texas-proxy = { path = "./texas-proxy" }
 
-floem = { git = "https://github.com/lapce/floem", rev = "e0dd862564e3afbad5cba8ebe60df166a7a41e56", features = ["editor", "serde", "default-image-formats", "rfd-async-std"] }
+floem = { git = "https://github.com/texas-projekt/texas-floem", rev = "67198cb4c97df0fd42137ec0497548e710bbeae4", features = ["editor", "serde", "default-image-formats", "rfd-async-std"] }
 # floem = { path = "../floem", features = ["editor", "serde", "default-image-formats", "rfd-async-std"] }
-floem-editor-core = { git = "https://github.com/lapce/floem", rev = "e0dd862564e3afbad5cba8ebe60df166a7a41e56", features = ["serde"] }
+floem-editor-core = { git = "https://github.com/texas-projekt/texas-floem", rev = "67198cb4c97df0fd42137ec0497548e710bbeae4", features = ["serde"] }
 # floem-editor-core = { path = "../floem/editor-core/", features = ["serde"] }
 
 [patch.crates-io]
