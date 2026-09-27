@@ -1008,10 +1008,10 @@ impl MainSplitData {
                         self.scope,
                         diff_editor_id,
                         editor_tab_id,
-                        left.clone(),
-                        right.clone(),
+                        (left.clone(), right.clone()),
                         editors,
                         self.common.clone(),
+                        self.editor_tabs,
                     );
                     self.diff_editors.update(|diff_editors| {
                         diff_editors.insert(diff_editor_id, diff_editor);

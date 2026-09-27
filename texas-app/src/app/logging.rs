@@ -5,9 +5,17 @@ use tracing_subscriber::{filter::Targets, reload::Handle};
 
 use crate::tracing::*;
 
+fn log_filter_targets(filter: Option<&str>) -> Targets {
+    filter
+        .and_then(|filter| filter.parse::<Targets>().ok())
+        .unwrap_or_else(|| {
+            Targets::new().with_default(LevelFilter::from_level(TraceLevel::INFO))
+        })
+}
+
 #[inline(always)]
 pub(super) fn logging() -> (Handle<Targets>, Option<WorkerGuard>) {
-    use tracing_subscriber::{filter, fmt, prelude::*, reload};
+    use tracing_subscriber::{fmt, prelude::*, reload};
 
     let (log_file, guard) = match Directory::logs_directory()
         .and_then(|dir| {
@@ -25,18 +33,12 @@ pub(super) fn logging() -> (Handle<Targets>, Option<WorkerGuard>) {
         None => (None, None),
     };
 
-    let log_file_filter_targets = filter::Targets::new()
-        .with_target("texas_app", LevelFilter::DEBUG)
-        .with_target("texas_proxy", LevelFilter::DEBUG)
-        .with_target("texas_core", LevelFilter::DEBUG)
-        .with_default(LevelFilter::from_level(TraceLevel::INFO));
+    let log_filter = std::env::var("TEXAS_LOG").ok();
+    let log_file_filter_targets = log_filter_targets(log_filter.as_deref());
     let (log_file_filter, reload_handle) =
         reload::Subscriber::new(log_file_filter_targets);
 
-    let console_filter_targets = std::env::var("TEXAS_LOG")
-        .unwrap_or_default()
-        .parse::<filter::Targets>()
-        .unwrap_or_default();
+    let console_filter_targets = log_filter_targets(log_filter.as_deref());
 
     let registry = tracing_subscriber::registry();
     if let Some(log_file) = log_file {
@@ -133,4 +135,22 @@ pub(super) fn error_modal(title: &str, msg: &str) -> i32 {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use tracing::Level;
+
+    use super::log_filter_targets;
+
+    #[test]
+    fn defaults_to_info_and_honors_explicit_debug_filter() {
+        let default = log_filter_targets(None);
+        assert!(default.would_enable("texas_app", &Level::INFO));
+        assert!(!default.would_enable("texas_app", &Level::DEBUG));
+
+        let explicit = log_filter_targets(Some("texas_app=debug"));
+        assert!(explicit.would_enable("texas_app", &Level::DEBUG));
+        assert!(!explicit.would_enable("texas_core", &Level::DEBUG));
+    }
 }

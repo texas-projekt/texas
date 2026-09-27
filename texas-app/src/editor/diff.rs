@@ -1,10 +1,26 @@
-use std::{rc::Rc, sync::atomic};
+use std::{
+    rc::Rc,
+    sync::{
+        Arc, Mutex,
+        atomic::{self, AtomicBool},
+    },
+};
 
+use super::{EditorData, EditorViewKind};
+use crate::{
+    config::{color::TexasColor, icon::TexasIcons},
+    doc::{Doc, DocContent},
+    editor_tab::{EditorTabChild, EditorTabData},
+    id::{DiffEditorId, EditorTabId},
+    main_split::{Editors, MainSplitData},
+    wave::wave_box,
+    window_tab::CommonData,
+};
 use floem::{
     View,
     event::{Event, EventListener},
     ext_event::create_ext_action,
-    reactive::{RwSignal, Scope, SignalGet, SignalUpdate, SignalWith},
+    reactive::{Memo, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith},
     style::CursorStyle,
     views::{
         Decorators, clip, dyn_stack, editor::id::EditorId, empty, label, stack, svg,
@@ -13,20 +29,10 @@ use floem::{
 use lapce_xi_rope::Rope;
 use serde::{Deserialize, Serialize};
 use texas_core::buffer::{
-    diff::{DiffExpand, DiffLines, expand_diff_lines, rope_diff},
+    diff::{DiffExpand, DiffLines, expand_diff_lines, rope_diff_cancellable},
     rope_text::RopeText,
 };
 use texas_rpc::{buffer::BufferId, proxy::ProxyResponse};
-
-use super::{EditorData, EditorViewKind};
-use crate::{
-    config::{color::TexasColor, icon::TexasIcons},
-    doc::{Doc, DocContent},
-    id::{DiffEditorId, EditorTabId},
-    main_split::{Editors, MainSplitData},
-    wave::wave_box,
-    window_tab::CommonData,
-};
 
 #[derive(Clone)]
 pub struct DiffInfo {
@@ -113,15 +119,14 @@ impl DiffEditorInfo {
 
         let left_doc = new_doc(&self.left_content);
         let right_doc = new_doc(&self.right_content);
-
         let diff_editor_data = DiffEditorData::new(
             cx,
             diff_editor_id,
             editor_tab_id,
-            left_doc,
-            right_doc,
+            (left_doc, right_doc),
             data.editors,
             data.common.clone(),
+            data.editor_tabs,
         );
 
         data.diff_editors.update(|diff_editors| {
@@ -141,6 +146,32 @@ pub struct DiffEditorData {
     pub right: EditorData,
     pub confirmed: RwSignal<bool>,
     pub focus_right: RwSignal<bool>,
+    editor_tabs: RwSignal<im::HashMap<EditorTabId, RwSignal<EditorTabData>>>,
+    selected: Memo<bool>,
+}
+
+pub(crate) fn selected_diff_memo(
+    cx: Scope,
+    editor_tabs: RwSignal<im::HashMap<EditorTabId, RwSignal<EditorTabData>>>,
+    editor_tab_id: EditorTabId,
+    diff_editor_id: DiffEditorId,
+) -> Memo<bool> {
+    cx.create_memo(move |_| {
+        editor_tabs.with(|editor_tabs| {
+            let Some(editor_tab) = editor_tabs.get(&editor_tab_id) else {
+                return false;
+            };
+            editor_tab.with(|editor_tab| {
+                matches!(
+                    editor_tab
+                        .children
+                        .get(editor_tab.active)
+                        .map(|(_, _, child)| child),
+                    Some(EditorTabChild::DiffEditor(id)) if *id == diff_editor_id
+                )
+            })
+        })
+    })
 }
 
 impl DiffEditorData {
@@ -148,16 +179,17 @@ impl DiffEditorData {
         cx: Scope,
         id: DiffEditorId,
         editor_tab_id: EditorTabId,
-        left_doc: Rc<Doc>,
-        right_doc: Rc<Doc>,
+        docs: (Rc<Doc>, Rc<Doc>),
         editors: Editors,
         common: Rc<CommonData>,
+        editor_tabs: RwSignal<im::HashMap<EditorTabId, RwSignal<EditorTabData>>>,
     ) -> Self {
         let cx = cx.create_child();
         let confirmed = cx.create_rw_signal(false);
+        let selected = selected_diff_memo(cx, editor_tabs, editor_tab_id, id);
 
         // TODO: ensure that left/right are cleaned up
-        let [left, right] = [left_doc, right_doc].map(|doc| {
+        let [left, right] = [docs.0, docs.1].map(|doc| {
             editors.make_from_doc(
                 cx,
                 doc,
@@ -168,6 +200,18 @@ impl DiffEditorData {
             )
         });
 
+        // Diff editors must not render their documents as normal editors while the
+        // asynchronous diff is being computed. The normal screen-line path may scan
+        // the entire document to determine wrapped-line counts.
+        left.kind.set(EditorViewKind::Diff(DiffInfo {
+            is_right: false,
+            changes: Vec::new(),
+        }));
+        right.kind.set(EditorViewKind::Diff(DiffInfo {
+            is_right: true,
+            changes: Vec::new(),
+        }));
+
         let data = Self {
             id,
             editor_tab_id: cx.create_rw_signal(editor_tab_id),
@@ -176,6 +220,8 @@ impl DiffEditorData {
             right,
             confirmed,
             focus_right: cx.create_rw_signal(true),
+            editor_tabs,
+            selected,
         };
 
         data.listen_diff_changes();
@@ -199,6 +245,8 @@ impl DiffEditorData {
     ) -> Self {
         let cx = cx.create_child();
         let confirmed = cx.create_rw_signal(true);
+        let selected =
+            selected_diff_memo(cx, self.editor_tabs, editor_tab_id, diff_editor_id);
 
         let [left, right] = [&self.left, &self.right].map(|editor_data| {
             editors
@@ -212,6 +260,15 @@ impl DiffEditorData {
                 .unwrap()
         });
 
+        left.kind.set(EditorViewKind::Diff(DiffInfo {
+            is_right: false,
+            changes: Vec::new(),
+        }));
+        right.kind.set(EditorViewKind::Diff(DiffInfo {
+            is_right: true,
+            changes: Vec::new(),
+        }));
+
         let diff_editor = DiffEditorData {
             scope: cx,
             id: diff_editor_id,
@@ -220,6 +277,8 @@ impl DiffEditorData {
             left,
             right,
             confirmed,
+            editor_tabs: self.editor_tabs,
+            selected,
         };
 
         diff_editor.listen_diff_changes();
@@ -228,6 +287,8 @@ impl DiffEditorData {
 
     fn listen_diff_changes(&self) {
         let cx = self.scope;
+        let active_diff = Arc::new(Mutex::new(None::<Arc<AtomicBool>>));
+        let selected = self.selected;
 
         let left = self.left.clone();
         let left_doc_rev = {
@@ -248,6 +309,15 @@ impl DiffEditorData {
         };
 
         cx.create_effect(move |_| {
+            if !selected.get() {
+                if let Ok(mut active) = active_diff.lock() {
+                    if let Some(previous) = active.take() {
+                        previous.store(true, atomic::Ordering::Release);
+                    }
+                }
+                return;
+            }
+
             let (_, left_rev) = left_doc_rev.get();
             let (left_editor_view, left_doc) = (left.kind, left.doc());
             let (left_atomic_rev, left_rope) =
@@ -262,8 +332,17 @@ impl DiffEditorData {
                     (buffer.atomic_rev(), buffer.text().clone())
                 });
 
+            let cancelled = Arc::new(AtomicBool::new(false));
+            if let Ok(mut active) = active_diff.lock() {
+                if let Some(previous) = active.replace(cancelled.clone()) {
+                    previous.store(true, atomic::Ordering::Release);
+                }
+            }
+
             let send = {
                 let right_atomic_rev = right_atomic_rev.clone();
+                let left_atomic_rev = left_atomic_rev.clone();
+                let cancelled = cancelled.clone();
                 create_ext_action(cx, move |changes: Option<Vec<DiffLines>>| {
                     let changes = if let Some(changes) = changes {
                         changes
@@ -271,6 +350,12 @@ impl DiffEditorData {
                         return;
                     };
 
+                    if !selected.get_untracked() {
+                        return;
+                    }
+                    if cancelled.load(atomic::Ordering::Acquire) {
+                        return;
+                    }
                     if left_atomic_rev.load(atomic::Ordering::Acquire) != left_rev {
                         return;
                     }
@@ -292,11 +377,12 @@ impl DiffEditorData {
             };
 
             rayon::spawn(move || {
-                let changes = rope_diff(
+                let changes = rope_diff_cancellable(
                     left_rope,
                     right_rope,
                     right_rev,
                     right_atomic_rev.clone(),
+                    cancelled,
                     Some(3),
                 );
                 send(changes);
@@ -564,4 +650,57 @@ pub fn diff_show_more_section_view(
             .pointer_events_none()
     })
     .debug_name("Diff Show More Section")
+}
+
+#[cfg(test)]
+mod tests {
+    use floem::{
+        peniko::kurbo::{Point, Rect},
+        reactive::{Scope, SignalGet, SignalUpdate},
+    };
+
+    use super::selected_diff_memo;
+    use crate::{
+        editor_tab::{EditorTabChild, EditorTabData},
+        id::{DiffEditorId, EditorTabId, SplitId},
+    };
+
+    #[test]
+    fn selected_diff_memo_tracks_the_active_child() {
+        let cx = Scope::new();
+        let editor_tab_id = EditorTabId::next();
+        let first_diff_id = DiffEditorId::next();
+        let second_diff_id = DiffEditorId::next();
+        let editor_tab = cx.create_rw_signal(EditorTabData {
+            scope: cx,
+            split: SplitId::next(),
+            editor_tab_id,
+            active: 0,
+            children: [first_diff_id, second_diff_id]
+                .into_iter()
+                .map(|id| {
+                    (
+                        cx.create_rw_signal(0),
+                        cx.create_rw_signal(Rect::ZERO),
+                        EditorTabChild::DiffEditor(id),
+                    )
+                })
+                .collect(),
+            window_origin: Point::ZERO,
+            layout_rect: Rect::ZERO,
+            locations: cx.create_rw_signal(im::Vector::new()),
+            current_location: cx.create_rw_signal(0),
+        });
+        let editor_tabs = cx.create_rw_signal(im::HashMap::new());
+        editor_tabs.update(|tabs| {
+            tabs.insert(editor_tab_id, editor_tab);
+        });
+
+        let selected =
+            selected_diff_memo(cx, editor_tabs, editor_tab_id, first_diff_id);
+        assert!(selected.get());
+
+        editor_tab.update(|tab| tab.active = 1);
+        assert!(!selected.get());
+    }
 }

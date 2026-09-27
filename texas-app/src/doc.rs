@@ -6,8 +6,8 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::{
-        Arc,
-        atomic::{self, AtomicUsize},
+        Arc, Mutex,
+        atomic::{self, AtomicBool, AtomicUsize},
     },
     time::Duration,
 };
@@ -40,7 +40,7 @@ use smallvec::SmallVec;
 use texas_core::{
     buffer::{
         Buffer, InvalLines,
-        diff::{DiffLines, rope_diff},
+        diff::{DiffLines, rope_diff_cancellable},
         rope_text::RopeText,
     },
     char_buffer::CharBuffer,
@@ -140,6 +140,7 @@ pub struct Doc {
     /// Stores information about different versions of the document from source control.
     histories: RwSignal<im::HashMap<String, DocumentHistory>>,
     pub head_changes: RwSignal<im::Vector<DiffLines>>,
+    active_head_diff: Arc<Mutex<Option<Arc<AtomicBool>>>>,
 
     line_styles: Rc<RefCell<LineStyles>>,
     pub parser: Rc<RefCell<BracketParser>>,
@@ -182,6 +183,7 @@ impl Doc {
             loaded: cx.create_rw_signal(false),
             histories: cx.create_rw_signal(im::HashMap::new()),
             head_changes: cx.create_rw_signal(im::Vector::new()),
+            active_head_diff: Arc::new(Mutex::new(None)),
             sticky_headers: Rc::new(RefCell::new(HashMap::new())),
             find_result: FindResult::new(cx),
             preedit: PreeditData::new(cx),
@@ -217,6 +219,7 @@ impl Doc {
             content: cx.create_rw_signal(content),
             histories: cx.create_rw_signal(im::HashMap::new()),
             head_changes: cx.create_rw_signal(im::Vector::new()),
+            active_head_diff: Arc::new(Mutex::new(None)),
             sticky_headers: Rc::new(RefCell::new(HashMap::new())),
             loaded: cx.create_rw_signal(true),
             find_result: FindResult::new(cx),
@@ -255,6 +258,7 @@ impl Doc {
             loaded: cx.create_rw_signal(true),
             histories: cx.create_rw_signal(im::HashMap::new()),
             head_changes: cx.create_rw_signal(im::Vector::new()),
+            active_head_diff: Arc::new(Mutex::new(None)),
             find_result: FindResult::new(cx),
             preedit: PreeditData::new(cx),
             editors,
@@ -816,9 +820,16 @@ impl Doc {
         let (atomic_rev, right_rope) = self
             .buffer
             .with_untracked(|b| (b.atomic_rev(), b.text().clone()));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        if let Ok(mut active) = self.active_head_diff.lock() {
+            if let Some(previous) = active.replace(cancelled.clone()) {
+                previous.store(true, atomic::Ordering::Release);
+            }
+        }
 
         let send = {
             let atomic_rev = atomic_rev.clone();
+            let cancelled = cancelled.clone();
             let head_changes = self.head_changes;
             create_ext_action(self.scope, move |changes| {
                 let changes = if let Some(changes) = changes {
@@ -827,7 +838,9 @@ impl Doc {
                     return;
                 };
 
-                if atomic_rev.load(atomic::Ordering::Acquire) != rev {
+                if cancelled.load(atomic::Ordering::Acquire)
+                    || atomic_rev.load(atomic::Ordering::Acquire) != rev
+                {
                     return;
                 }
 
@@ -836,8 +849,14 @@ impl Doc {
         };
 
         rayon::spawn(move || {
-            let changes =
-                rope_diff(left_rope, right_rope, rev, atomic_rev.clone(), None);
+            let changes = rope_diff_cancellable(
+                left_rope,
+                right_rope,
+                rev,
+                atomic_rev.clone(),
+                cancelled,
+                None,
+            );
             send(changes.map(im::Vector::from));
         });
     }
